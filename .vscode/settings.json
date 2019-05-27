@@ -1,0 +1,8 @@
+{
+    "python.linting.pylintEnabled": true,
+    "python.pythonPath": "C:\\Users\\Freek\\AppData\\Local\\Programs\\Python\\Python37\\python.exe",
+    "python.linting.pylintArgs": [
+        "--errors-only",
+        "--generated-members=numpy.* ,torch.* ,cv2.* , cv.*"
+        ]
+}

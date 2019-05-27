@@ -1,0 +1,300 @@
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+import numpy as np
+import numpy.random as nprandom
+
+"""Based on: https://github.com/iwasaki-kenta/keita"""
+class GatedActivation(nn.Module):
+    def __init__(self, num_channels):
+        super(GatedActivation, self).__init__()
+
+        self.kernel_size = 1
+        self.weights = nn.Parameter(torch.FloatTensor(
+            num_channels, num_channels, self.kernel_size * 2))
+
+    def forward(self, x):
+        """
+        Conditional Image Generation with PixelCNN Decoders
+        http://arxiv.org/abs/1606.05328
+        1D gated activation unit that models the forget gates and
+        real gates of an activation unit using convolutions.
+        :param x: (batch size, # channels, height)
+        :return: tanh(conv(Wr, x)) * sigmoid(conv(Wf, x))
+        """
+
+        real_gate_weights, forget_gate_weights = self.weights.split(
+            self.kernel_size, dim=2)
+        real_gate_weights = real_gate_weights.contiguous()
+        forget_gate_weights = forget_gate_weights.contiguous()
+
+        real_gate = F.tanh(
+            F.conv1d(input=x, weight=real_gate_weights, stride=1))
+        forget_gate = F.sigmoid(
+            F.conv1d(input=x, weight=forget_gate_weights, stride=1))
+        return real_gate * forget_gate
+
+#DNN based on Vera-Diaz et al. (2018) - Towards End-to-End Acoustic Localization using Deep Learning: from Audio Signal to Source Position Coordinates
+'''
+Structure:
+#     Layer       Output  Kernel  Activation  Other
+---------------------------------------------------------
+1     Conv1       96      7       ReLu
+2     MaxPool1    96      7
+3     Conv2       96      7       ReLu
+4     Conv3       128     5       ReLu
+5     MaxPool3    128     5
+6     Conv4       128     5       ReLu
+7     MaxPool4    128     5
+8     Conv5       128     3       ReLu
+9     FC          500             ReLu        Dropout 0.5
+10    Output (FC) 1
+'''
+class SSLConvNet(nn.Module):
+
+    def __init__(self, signalLength):
+        super(SSLConvNet, self).__init__()
+        self.KERNEL_LAYER_12 = 7
+        self.KERNEL_LAYER_34 = 5
+        self.KERNEL_LAYER_5 = 3
+        self.OUT_SIZE_LAYER_12 = 96
+        self.OUT_SIZE_LAYER_345 = 128
+
+        self.conv1 = nn.Conv1d(2, self.OUT_SIZE_LAYER_12, self.KERNEL_LAYER_12,
+                               padding=int((self.KERNEL_LAYER_12 - 1)/2))
+        nn.init.xavier_uniform_(self.conv1.weight)
+        self.maxp1 = nn.MaxPool1d(self.KERNEL_LAYER_12, stride=self.KERNEL_LAYER_12)
+        self.conv2 = nn.Conv1d(self.OUT_SIZE_LAYER_12, self.OUT_SIZE_LAYER_12, 
+                               self.KERNEL_LAYER_12, padding = int((self.KERNEL_LAYER_12 - 1)/2))
+        nn.init.xavier_uniform_(self.conv2.weight)
+        self.conv3 = nn.Conv1d(self.OUT_SIZE_LAYER_12, self.OUT_SIZE_LAYER_345, 
+                               self.KERNEL_LAYER_34, padding=int((self.KERNEL_LAYER_34 - 1)/2))
+        nn.init.xavier_uniform_(self.conv3.weight)
+        self.maxp3 = nn.MaxPool1d(self.KERNEL_LAYER_34, stride=self.KERNEL_LAYER_34)
+        self.conv4 = nn.Conv1d(self.OUT_SIZE_LAYER_345, self.OUT_SIZE_LAYER_345, 
+                               self.KERNEL_LAYER_34, padding=int((self.KERNEL_LAYER_34 - 1)/2))
+        nn.init.xavier_uniform_(self.conv4.weight)
+        self.maxp4 = nn.MaxPool1d(self.KERNEL_LAYER_34, stride=self.KERNEL_LAYER_34)
+        self.conv5 = nn.Conv1d(self.OUT_SIZE_LAYER_345, self.OUT_SIZE_LAYER_345, 
+                               self.KERNEL_LAYER_5, padding=int((self.KERNEL_LAYER_5 - 1)/2))
+        nn.init.xavier_uniform_(self.conv5.weight)
+        self.fc = nn.Linear(self.computeConvFlatSize(signalLength), 500)
+        nn.init.xavier_uniform_(self.fc.weight)
+        self.outX = nn.Linear(500, 1)
+        self.outY = nn.Linear(500, 1)
+        nn.init.xavier_uniform_(self.outX.weight)
+        nn.init.xavier_uniform_(self.outY.weight)
+        self.act = nn.ReLU()
+
+    def computeConvFlatSize(self, signLen):
+        afterMaxP1 = int((signLen - self.KERNEL_LAYER_12)/self.KERNEL_LAYER_12) + 1
+        afterMaxP3 = int((afterMaxP1 - self.KERNEL_LAYER_34)/self.KERNEL_LAYER_34) + 1
+        afterMaxP4 = int((afterMaxP3 - self.KERNEL_LAYER_34)/self.KERNEL_LAYER_34) + 1
+        return self.OUT_SIZE_LAYER_345 * afterMaxP4
+
+    def forward(self, inL, inR, debug = False, isDropout1 = False, isDropout2 = False):
+        # Add extra "channel" dimension for convolutional layers
+        inL = inL.view(inL.size(0), 1, inL.size(1))
+        inR = inR.view(inR.size(0), 1, inR.size(1))
+
+        # Concatenate input signals
+        x = torch.cat((inL, inR), dim = 1)
+        if debug: 
+            print("In = " + str(x.size()))
+
+        x = self.act(self.conv1(x))
+        if debug: 
+            print("Conv1 = " + str(x.size()))
+
+        x = self.maxp1(x)
+        if debug: 
+            print("Maxp1 = " + str(x.size()))
+
+        x = self.act((self.conv2(x)))
+        if debug: 
+            print("Conv2 = " + str(x.size()))
+
+        x = self.act((self.conv3(x)))
+        if debug: 
+            print("Conv3 = " + str(x.size()))
+
+        x = self.maxp3(x)
+        if debug: 
+             print("Maxp3 = " + str(x.size()))
+
+        x = self.act((self.conv4(x)))
+        if debug: 
+            print("Conv4 = " + str(x.size()))
+
+        x = self.maxp4(x)
+        if debug: 
+            print("Maxp4 = " + str(x.size()))
+
+        x = self.act((self.conv5(x)))
+        if debug: 
+            print("Conv5 = " + str(x.size()))
+
+        n_features = np.prod(x.size()[1:])
+        x = x.view(-1, n_features)
+        if debug: 
+            print("Reshape = " + str(x.size()))
+
+        x = F.dropout(x, isDropout1)
+
+        x = self.act(self.fc(x))
+        if debug: 
+            print("FC = " + str(x.size()))
+
+        x = F.dropout(x, isDropout2)
+        
+        return self.outX(x), self.outY(x)
+
+
+# class SSLConvNetSinCos(nn.Module):
+
+#     def __init__(self, signalLength):
+#         super(SSLConvNetSinCos, self).__init__()
+#         self.KERNEL_LAYER_12 = 7
+#         self.KERNEL_LAYER_34 = 5
+#         self.KERNEL_LAYER_5 = 3
+#         self.OUT_SIZE_LAYER_12 = 96
+#         self.OUT_SIZE_LAYER_345 = 128
+#         self.convOutSizeFlat = self.OUT_SIZE_LAYER_345 * (signalLength - 3*(self.KERNEL_LAYER_12-1) - 4 * (self.KERNEL_LAYER_34-1) - (self.KERNEL_LAYER_5-1))
+
+#         self.conv1 = nn.Conv1d(2, self.OUT_SIZE_LAYER_12, self.KERNEL_LAYER_12)
+#         nn.init.xavier_uniform_(self.conv1.weight)
+#         self.maxp1 = nn.MaxPool1d(self.KERNEL_LAYER_12, stride=1)
+#         self.conv2 = nn.Conv1d(self.OUT_SIZE_LAYER_12,
+#                                self.OUT_SIZE_LAYER_12, self.KERNEL_LAYER_12)
+#         nn.init.xavier_uniform_(self.conv2.weight)
+#         self.conv3 = nn.Conv1d(self.OUT_SIZE_LAYER_12,
+#                                self.OUT_SIZE_LAYER_345, self.KERNEL_LAYER_34)
+#         nn.init.xavier_uniform_(self.conv3.weight)
+#         self.maxp3 = nn.MaxPool1d(self.KERNEL_LAYER_34, stride=1)
+#         self.conv4 = nn.Conv1d(self.OUT_SIZE_LAYER_345,
+#                                self.OUT_SIZE_LAYER_345, self.KERNEL_LAYER_34)
+#         nn.init.xavier_uniform_(self.conv4.weight)
+#         self.maxp4 = nn.MaxPool1d(self.KERNEL_LAYER_34, stride=1)
+#         self.conv5 = nn.Conv1d(self.OUT_SIZE_LAYER_345,
+#                                self.OUT_SIZE_LAYER_345, self.KERNEL_LAYER_5)
+#         nn.init.xavier_uniform_(self.conv5.weight)
+#         self.fc = nn.Linear(self.convOutSizeFlat, 500)
+#         nn.init.xavier_uniform_(self.conv1.weight)
+#         self.outSin = nn.Linear(500, 1)
+#         nn.init.xavier_uniform_(self.outSin.weight)
+#         self.outCos = nn.Linear(500, 1)
+#         nn.init.xavier_uniform_(self.outCos.weight)
+#         self.relu = nn.LeakyReLU()
+#         self.tanh = nn.Tanh()
+
+#     def forward(self, inL, inR, debug=False):
+#         # Add extra "channel" dimension for convolutional layers
+#         inL = inL.view(inL.size(0), 1, inL.size(1))
+#         inR = inR.view(inR.size(0), 1, inR.size(1))
+
+#         # Concatenate input signals
+#         x = torch.cat((inL, inR), dim=1)
+#         if debug:
+#             print("In = " + str(x.size()))
+
+#         x = self.relu((self.conv1(x)))
+#         if debug:
+#             print("Conv1 = " + str(x.size()))
+
+#         x = self.maxp1(x)
+#         if debug:
+#             print("Maxp1 = " + str(x.size()))
+
+#         x = self.relu((self.conv2(x)))
+#         if debug:
+#             print("Conv2 = " + str(x.size()))
+
+#         x = self.relu((self.conv3(x)))
+#         if debug:
+#             print("Conv3 = " + str(x.size()))
+
+#         x = self.maxp3(x)
+#         if debug:
+#              print("Maxp3 = " + str(x.size()))
+
+#         x = self.relu((self.conv4(x)))
+#         if debug:
+#             print("Conv4 = " + str(x.size()))
+
+#         x = self.maxp4(x)
+#         if debug:
+#             print("Maxp4 = " + str(x.size()))
+
+#         x = self.relu((self.conv5(x)))
+#         if debug:
+#             print("Conv5 = " + str(x.size()))
+
+#         n_features = np.prod(x.size()[1:])
+#         x = x.view(-1, n_features)
+#         if debug:
+#             print("Reshape = " + str(x.size()))
+
+#         x = self.relu(self.fc(x))
+#         if debug:
+#             print("FC = " + str(x.size()))
+
+#         sin = self.outSin(x)
+#         cos = self.outCos(x)
+
+#         return sin, cos
+
+"""
+ONE FREQUENCY AND AMP:
+    Converges around 4000 epochs for:
+        RAD = 50000                                         
+        MIC_L_DIST = (20000, 10000)                         
+        MIC_R_DIST = (18000, 12000)      
+        ABSORPTION = 1.0
+        MIN_FREQ = 50
+        SAMPLE_RATE = MIN_FREQ*2.5                            
+        TIME = 1                                            
+        MIN_LENGTH = 900    
+
+    Converges around 1100 epochs for:
+        RAD = 1000                                         
+        MIC_L_DIST = (0.4*RAD, 0.2*RAD)                         
+        MIC_R_DIST = (0.36*RAD, 0.24*RAD)               
+        ABSORPTION = 1.0
+        MIN_FREQ = 50
+        SAMPLE_RATE = MIN_FREQ*2.5                            
+        TIME = 1                                           
+        MIN_LENGTH = 350                                   
+        TO_RAD = np.pi/180                                  
+        TO_DEG = 180/np.pi      
+
+                            
+"""
+class SimpleNet(nn.Module):
+
+    def __init__(self, signalLength):
+        super(SimpleNet, self).__init__()
+        self.fc1 = nn.Linear(signalLength*2, 1024)
+        self.fc2 = nn.Linear(1024, 512)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, 128)
+        self.fc5 = nn.Linear(128, 64)
+        self.fc6 = nn.Linear(64, 32)
+        # self.out = nn.Linear(32, 1)
+        self.outX = nn.Linear(32, 1)
+        self.outY = nn.Linear(32, 1)
+        self.act = nn.ReLU()
+
+    def forward(self, inL, inR, p = 0.5, isDropout = True):
+        # Concatenate input signals
+        x = torch.cat((inL, inR), dim = 1)
+
+        x = F.dropout(self.act(self.fc1(x)), p = p, training = isDropout)
+        x = F.dropout(self.act(self.fc2(x)), p = p, training = isDropout)
+        x = F.dropout(self.act(self.fc3(x)), p = p, training = isDropout)
+        x = F.dropout(self.act(self.fc4(x)), p = p, training = isDropout)
+        x = F.dropout(self.act(self.fc5(x)), p = p, training = isDropout)
+        x = F.dropout(self.act(self.fc6(x)), p = p, training = isDropout)
+        # x = self.out(x)
+
+        # return x
+        return self.outX(x), self.outY(x)
