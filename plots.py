@@ -1,6 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import math
+from room_simulation import Simulation
+from sine_dataset import SineData
 
 radians = [
            r'$0$', r'$\frac{\pi}{4}$', r'$\frac{\pi}{2}$', r'$\frac{3\pi}{4}$', 
@@ -92,4 +94,26 @@ heatmap2d(cosineValues,
           yticks,
           ylabels)
 
-#%%
+RAD = 50
+MIC_L_DIST = (11, -10)
+MIC_R_DIST = (11, 10)
+ABSORPTION = 0.0
+MAX_FREQ = 20000
+SAMPLE_RATE = int(MAX_FREQ*2.2)
+TIME = 1                                            
+MIN_LENGTH = 48000
+
+roomSim = Simulation(SAMPLE_RATE, RAD, ABSORPTION, MIC_L_DIST, MIC_R_DIST, 2)
+sineDataset = SineData(1, roomSim, TIME, MIN_LENGTH, MAX_FREQ)
+
+amp = 1
+freq = 20
+azi = np.pi/2
+
+signalMic1, signalMic2, _, _ = sineDataset.generateSignals(azi, amp, freq)
+
+plt.plot(signalMic1)
+plt.show()
+
+plt.plot(signalMic2)
+plt.show()
