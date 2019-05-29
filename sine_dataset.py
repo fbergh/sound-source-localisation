@@ -29,7 +29,7 @@ class SineData(Dataset):
         signalR = (signalR - self.signalMean) / self.signalStd
 
         # Convert numpy arrays to torch tensors and return X and Y coordinates in meters
-        return torch.from_numpy(signalL), torch.from_numpy(signalR), ssX * 100, ssY * 100
+        return torch.from_numpy(signalL), torch.from_numpy(signalR), ssX * 100, ssY * 100, azi
 
     def getMeanAndStd(self):
         nrOfSamples = 1000
