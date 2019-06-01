@@ -113,7 +113,8 @@ azi = np.pi/2
 signalMic1, signalMic2, _, _ = sineDataset.generateSignals(azi, amp, freq)
 
 plt.plot(signalMic1)
-plt.show()
-
-plt.plot(signalMic2)
+plt.title("A (standardised) sine wave with amplitude of one and a frequency of 20Hz")
+plt.ylabel("Amplitude")
+plt.xlabel("Samples (1 sec = 44000 data points)")
+plt.grid(True)
 plt.show()
