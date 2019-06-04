@@ -5,12 +5,13 @@ import numpy as np
 
 class SineData(Dataset):
 
-    def __init__(self, batchSize, roomSim, time, minLength, maxFreq):
+    def __init__(self, batchSize, roomSim, time, minLength, minFreq, maxFreq):
         self.batchSize = batchSize
         self.roomSim = roomSim
         self.time = time
         self.sampleRate = self.roomSim.getSampleRate()
         self.MIN_LENGTH = minLength # Different for different signals
+        self.MIN_FREQ = minFreq
         self.MAX_FREQ = maxFreq
         self.signalMean, self.signalStd = self.getMeanAndStd()
 
@@ -20,7 +21,7 @@ class SineData(Dataset):
     def __getitem__(self, idx):
         azi = 2*np.pi*np.random.random_sample()
         amp = np.random.randint(1, 500 + 1)
-        freq = np.random.randint(20, self.MAX_FREQ + 1)
+        freq = np.random.randint(self.MIN_FREQ, self.MAX_FREQ + 1)
 
         signalL, signalR, ssX, ssY = self.generateSignals(azi, amp, freq)
  
@@ -41,7 +42,7 @@ class SineData(Dataset):
         for _ in range(nrOfSamples):
             azi = 2*np.pi*np.random.random_sample()
             amp = np.random.randint(1, 500 + 1)
-            freq = np.random.randint(20, self.MAX_FREQ + 1)
+            freq = np.random.randint(self.MIN_FREQ, self.MAX_FREQ + 1)
 
             signalL, signalR, _, _ = self.generateSignals(azi, amp, freq)
             meansL.append(np.mean(signalL))
