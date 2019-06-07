@@ -29,6 +29,7 @@ class SSLConvNet(nn.Module):
         self.KERNEL_LAYER_5 = 3
         self.OUT_SIZE_LAYER_12 = 96
         self.OUT_SIZE_LAYER_345 = 128
+        self.fc_activations = []
 
         self.conv1 = nn.Conv1d(2, self.OUT_SIZE_LAYER_12, self.KERNEL_LAYER_12,
                                padding=int((self.KERNEL_LAYER_12 - 1)/2))
@@ -62,7 +63,7 @@ class SSLConvNet(nn.Module):
         afterMaxP4 = int((afterMaxP3 - self.KERNEL_LAYER_34)/self.KERNEL_LAYER_34) + 1
         return self.OUT_SIZE_LAYER_345 * afterMaxP4
 
-    def forward(self, inL, inR, debug = False, isDropout1 = False, isDropout2 = False):
+    def forward(self, inL, inR, debug = False, isDropout1 = False, isDropout2 = False, record_acts = False):
         # Add extra "channel" dimension for convolutional layers
         inL = inL.view(inL.size(0), 1, inL.size(1))
         inR = inR.view(inR.size(0), 1, inR.size(1))
@@ -114,7 +115,10 @@ class SSLConvNet(nn.Module):
         x = self.act(self.fc(x))
         if debug: 
             print("FC = " + str(x.size()))
-
+        
+        if record_acts:
+            self.fc_activations.append(torch.mean(x).detach().cpu().numpy())
+            
         x = F.dropout(x, isDropout2)
         
         return self.outX(x), self.outY(x)
@@ -247,22 +251,22 @@ class SimpleNet(nn.Module):
         super(SimpleNet, self).__init__()
         self.fc1 = nn.Linear(signalLength*2, 1024)
         self.fc2 = nn.Linear(1024, 512)
-        self.fc3 = nn.Linear(512, 256)
-        self.fc4 = nn.Linear(256, 128)
-        self.fc5 = nn.Linear(128, 64)
-        self.fc6 = nn.Linear(64, 32)
+#         self.fc3 = nn.Linear(1024, 512)
+        self.fc4 = nn.Linear(512, 256)
+        self.fc5 = nn.Linear(256, 128)
+        self.fc6 = nn.Linear(128, 64)
         # self.out = nn.Linear(32, 1)
-        self.outX = nn.Linear(32, 1)
-        self.outY = nn.Linear(32, 1)
+        self.outX = nn.Linear(64, 1)
+        self.outY = nn.Linear(64, 1)
         self.act = nn.ReLU()
 
-    def forward(self, inL, inR, p = 0.5, isDropout = True):
+    def forward(self, inL, inR, p = 0.5, isDropout = False):
         # Concatenate input signals
         x = torch.cat((inL, inR), dim = 1)
 
         x = F.dropout(self.act(self.fc1(x)), p = p, training = isDropout)
         x = F.dropout(self.act(self.fc2(x)), p = p, training = isDropout)
-        x = F.dropout(self.act(self.fc3(x)), p = p, training = isDropout)
+#         x = F.dropout(self.act(self.fc3(x)), p = p, training = isDropout)
         x = F.dropout(self.act(self.fc4(x)), p = p, training = isDropout)
         x = F.dropout(self.act(self.fc5(x)), p = p, training = isDropout)
         x = F.dropout(self.act(self.fc6(x)), p = p, training = isDropout)
