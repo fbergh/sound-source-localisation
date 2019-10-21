@@ -29,10 +29,12 @@ def penalty(pred):
 def cossLoss(pred, target):
     return radial(pred, target) + penalty(pred)
 
-def heatmap2d(arr, title="", xlabel="", ylabel="", xticks=None, xlabels=None, yticks=None, ylabels=None):
+def heatmap2d(arr, title="", xlabel="", ylabel="", xticks=None, xlabels=None, yticks=None, ylabels=None, cbar_label=""):
+    plt.figure(figsize=(10,5))
     img = plt.imshow(arr, cmap='inferno')
     im_ratio = arr.shape[0]/arr.shape[1]
-    plt.colorbar(img, fraction=0.046*im_ratio, pad=0.04)
+    cbar = plt.colorbar(img, fraction=0.046*im_ratio, pad=0.04)
+    cbar.ax.set_ylabel(cbar_label, rotation=270, labelpad=15)
     plt.title(title)
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
@@ -48,12 +50,13 @@ for theta in range(360+1):
         radialValues[theta, phi] = radialLoss
         radialValues[phi, theta] = radialLoss
 
-xlabel = r'Angles in radians'
-ylabel = xlabel
+xlabel = r'Predicted angles [radians]'
+ylabel = r'Actual angles [radians]'
 xticks = np.arange(0, 360+1, 90)
 yticks = xticks
 xlabels = radians[:len(xticks)*2][::2]
 ylabels = xlabels
+cbar_label = "Loss value [-]"
 heatmap2d(radialValues, 
           r'Heatmap of Equation 3',
           xlabel,
@@ -61,7 +64,9 @@ heatmap2d(radialValues,
           xticks,
           xlabels,
           yticks,
-          ylabels)
+          ylabels,
+          cbar_label
+          )
 
 # Plot penalty
 penaltyValues = np.zeros((360+1, 1080+1))
@@ -79,7 +84,9 @@ heatmap2d(penaltyValues,
           xticks,
           xlabels,
           yticks,
-          ylabels)
+          ylabels,
+          cbar_label
+          )
 
 # Plot cosine loss
 cosineValues = np.append(radialValues, 
@@ -92,19 +99,22 @@ heatmap2d(cosineValues,
           xticks,
           xlabels,
           yticks,
-          ylabels)
+          ylabels,
+          cbar_label
+          )
 
 RAD = 50
 MIC_L_DIST = (11, -10)
-MIC_R_DIST = (11, 10)
+MIC_R_DIST = (11, -10)
 ABSORPTION = 0.0
+MIN_FREQ = 20
 MAX_FREQ = 20000
 SAMPLE_RATE = int(MAX_FREQ*2.2)
 TIME = 1                                            
 MIN_LENGTH = 48000
 
 roomSim = Simulation(SAMPLE_RATE, RAD, ABSORPTION, MIC_L_DIST, MIC_R_DIST, 2)
-sineDataset = SineData(1, roomSim, TIME, MIN_LENGTH, MAX_FREQ)
+sineDataset = SineData(1, roomSim, TIME, MIN_LENGTH, MIN_FREQ, MAX_FREQ)
 
 amp = 1
 freq = 20
@@ -114,7 +124,7 @@ signalMic1, signalMic2, _, _ = sineDataset.generateSignals(azi, amp, freq)
 
 plt.plot(signalMic1)
 plt.title("A (standardised) sine wave with amplitude of one and a frequency of 20Hz")
-plt.ylabel("Amplitude")
-plt.xlabel("Samples (1 sec = 44000 data points)")
+plt.ylabel("Amplitude [z-score]")
+plt.xlabel("Samples (1s = 44000 data points) [-]")
 plt.grid(True)
 plt.show()
