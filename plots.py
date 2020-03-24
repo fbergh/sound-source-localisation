@@ -67,6 +67,7 @@ heatmap2d(radialValues,
           ylabels,
           cbar_label
           )
+plt.savefig("../Images/heatmap_eq3.png")
 
 # Plot penalty
 penaltyValues = np.zeros((360+1, 1080+1))
@@ -87,6 +88,7 @@ heatmap2d(penaltyValues,
           ylabels,
           cbar_label
           )
+plt.savefig("../Images/heatmap_eq4.png")
 
 # Plot cosine loss
 cosineValues = np.append(radialValues, 
@@ -102,6 +104,7 @@ heatmap2d(cosineValues,
           ylabels,
           cbar_label
           )
+plt.savefig("../Images/heatmap_eq5.png")
 
 RAD = 50
 MIC_L_DIST = (11, -10)
@@ -128,3 +131,4 @@ plt.ylabel("Amplitude [z-score]")
 plt.xlabel("Samples (1s = 44000 data points) [-]")
 plt.grid(True)
 plt.show()
+plt.savefig("../Images/input2_nn_arch.png")
