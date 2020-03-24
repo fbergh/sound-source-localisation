@@ -1,5 +1,6 @@
-# Miscellaneous
-logs/*
+# Irrelevant project files
+logs/
+.vscode/
 
 # VS Code
 .vscode/*
