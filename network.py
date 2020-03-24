@@ -4,11 +4,11 @@ import torch.nn.functional as F
 import numpy as np
 import numpy.random as nprandom
 
-#DNN based on Vera-Diaz et al. (2018) - Towards End-to-End Acoustic Localization using Deep Learning: from Audio Signal to Source Position Coordinates
 '''
+DNN based on Vera-Diaz et al. (2018) - Towards End-to-End Acoustic Localization using Deep Learning: from Audio Signal to Source Position Coordinates
 Structure:
-#     Layer       Output  Kernel  Activation  Other
----------------------------------------------------------
+#     Layer       Output  Kernel  Activation  
+---------------------------------------------
 1     Conv1       96      7       ReLu
 2     MaxPool1    96      7
 3     Conv2       96      7       ReLu
@@ -17,260 +17,164 @@ Structure:
 6     Conv4       128     5       ReLu
 7     MaxPool4    128     5
 8     Conv5       128     3       ReLu
-9     FC          500             ReLu        Dropout 0.5
+9     FC          500             ReLu        
 10    Output (FC) 1
 '''
 class SSLConvNet(nn.Module):
 
-    def __init__(self, signalLength):
+    def __init__(self, signal_length, do_cosine_output = False):
         super(SSLConvNet, self).__init__()
-        self.KERNEL_LAYER_12 = 7
-        self.KERNEL_LAYER_34 = 5
-        self.KERNEL_LAYER_5 = 3
-        self.OUT_SIZE_LAYER_12 = 96
-        self.OUT_SIZE_LAYER_345 = 128
+
+        # To record activations
         self.fc_activations = []
 
-        self.conv1 = nn.Conv1d(2, self.OUT_SIZE_LAYER_12, self.KERNEL_LAYER_12,
-                               padding=int((self.KERNEL_LAYER_12 - 1)/2))
+        self.conv1 = nn.Conv1d(2, 96, 7, padding=7//2)
         nn.init.xavier_uniform_(self.conv1.weight)
-        self.maxp1 = nn.MaxPool1d(self.KERNEL_LAYER_12, stride=self.KERNEL_LAYER_12)
-        self.conv2 = nn.Conv1d(self.OUT_SIZE_LAYER_12, self.OUT_SIZE_LAYER_12, 
-                               self.KERNEL_LAYER_12, padding = int((self.KERNEL_LAYER_12 - 1)/2))
+        self.maxp1 = nn.MaxPool1d(7, stride=7)
+
+        self.conv2 = nn.Conv1d(96, 96, 7, padding = 7//2)
         nn.init.xavier_uniform_(self.conv2.weight)
-        self.conv3 = nn.Conv1d(self.OUT_SIZE_LAYER_12, self.OUT_SIZE_LAYER_345, 
-                               self.KERNEL_LAYER_34, padding=int((self.KERNEL_LAYER_34 - 1)/2))
+
+        self.conv3 = nn.Conv1d(96, 128, 5, padding=5//2)
         nn.init.xavier_uniform_(self.conv3.weight)
-        self.maxp3 = nn.MaxPool1d(self.KERNEL_LAYER_34, stride=self.KERNEL_LAYER_34)
-        self.conv4 = nn.Conv1d(self.OUT_SIZE_LAYER_345, self.OUT_SIZE_LAYER_345, 
-                               self.KERNEL_LAYER_34, padding=int((self.KERNEL_LAYER_34 - 1)/2))
+        self.maxp3 = nn.MaxPool1d(5, stride=5)
+
+        self.conv4 = nn.Conv1d(128, 128, 5, padding=5//2)
         nn.init.xavier_uniform_(self.conv4.weight)
-        self.maxp4 = nn.MaxPool1d(self.KERNEL_LAYER_34, stride=self.KERNEL_LAYER_34)
-        self.conv5 = nn.Conv1d(self.OUT_SIZE_LAYER_345, self.OUT_SIZE_LAYER_345, 
-                               self.KERNEL_LAYER_5, padding=int((self.KERNEL_LAYER_5 - 1)/2))
+        self.maxp4 = nn.MaxPool1d(5, stride=5)
+
+        self.conv5 = nn.Conv1d(128, 128, 3, padding=3//2)
         nn.init.xavier_uniform_(self.conv5.weight)
-        self.fc = nn.Linear(self.computeConvFlatSize(signalLength), 500)
+
+        self.fc = nn.Linear(self.compute_flattened_size(signal_length), 500)
         nn.init.xavier_uniform_(self.fc.weight)
-        self.outX = nn.Linear(500, 1)
-        self.outY = nn.Linear(500, 1)
-        nn.init.xavier_uniform_(self.outX.weight)
-        nn.init.xavier_uniform_(self.outY.weight)
+
+        if do_cosine_output:
+            self.out_x = nn.Linear(500, 1)
+            nn.init.xavier_uniform_(self.out_x.weight)
+            self.out_y = nn.Linear(500, 1)
+            nn.init.xavier_uniform_(self.out_y.weight)
+        else:
+            self.out = nn.Linear(500, 1)
+            nn.init.xavier_uniform_(self.out_y.weight)
+
         self.act = nn.ReLU()
 
-    def computeConvFlatSize(self, signLen):
-        afterMaxP1 = int((signLen - self.KERNEL_LAYER_12)/self.KERNEL_LAYER_12) + 1
-        afterMaxP3 = int((afterMaxP1 - self.KERNEL_LAYER_34)/self.KERNEL_LAYER_34) + 1
-        afterMaxP4 = int((afterMaxP3 - self.KERNEL_LAYER_34)/self.KERNEL_LAYER_34) + 1
-        return self.OUT_SIZE_LAYER_345 * afterMaxP4
+    def compute_flattened_size(self, signal_length):
+        new_size = (signal_length - 7)//7 + 1
+        new_size = (new_size - 5)//5 + 1
+        new_size = (new_size - 5)//5 + 1
+        return 128 * new_size
 
-    def forward(self, inL, inR, debug = False, isDropout1 = False, isDropout2 = False, record_acts = False):
+    def forward(self, inL, inR, record_activations = False):
         # Add extra "channel" dimension for convolutional layers
         inL = inL.view(inL.size(0), 1, inL.size(1))
         inR = inR.view(inR.size(0), 1, inR.size(1))
 
         # Concatenate input signals
         x = torch.cat((inL, inR), dim = 1)
-        if debug: 
-            print("In = " + str(x.size()))
-
         x = self.act(self.conv1(x))
-        if debug: 
-            print("Conv1 = " + str(x.size()))
-
         x = self.maxp1(x)
-        if debug: 
-            print("Maxp1 = " + str(x.size()))
-
-        x = self.act((self.conv2(x)))
-        if debug: 
-            print("Conv2 = " + str(x.size()))
-
-        x = self.act((self.conv3(x)))
-        if debug: 
-            print("Conv3 = " + str(x.size()))
-
+        x = self.act(self.conv2(x))
+        x = self.act(self.conv3(x))
         x = self.maxp3(x)
-        if debug: 
-             print("Maxp3 = " + str(x.size()))
-
-        x = self.act((self.conv4(x)))
-        if debug: 
-            print("Conv4 = " + str(x.size()))
-
+        x = self.act(self.conv4(x))
         x = self.maxp4(x)
-        if debug: 
-            print("Maxp4 = " + str(x.size()))
+        x = self.act(self.conv5(x))
 
-        x = self.act((self.conv5(x)))
-        if debug: 
-            print("Conv5 = " + str(x.size()))
-
-        n_features = np.prod(x.size()[1:])
-        x = x.view(-1, n_features)
-        if debug: 
-            print("Reshape = " + str(x.size()))
-
-        x = F.dropout(x, isDropout1)
-
+        x = x.view(x.size(0), -1)
         x = self.act(self.fc(x))
-        if debug: 
-            print("FC = " + str(x.size()))
         
-        if record_acts:
+        if record_activations:
             self.fc_activations.append(torch.mean(x).detach().cpu().numpy())
-            
-        x = F.dropout(x, isDropout2)
         
-        return self.outX(x), self.outY(x)
+        if self.do_cosine_output:
+            return self.out(x)
+        else:
+            return self.out_x(x), self.out_y(x)
 
 
-class SSLConvNetCosLoss(nn.Module):
+# class SSLConvNetCosLoss(nn.Module):
+#     def __init__(self, signal_length):
+#         super(SSLConvNetCosLoss, self).__init__()
 
-    def __init__(self, signalLength):
-        super(SSLConvNetCosLoss, self).__init__()
-        self.KERNEL_LAYER_12 = 7
-        self.KERNEL_LAYER_34 = 5
-        self.KERNEL_LAYER_5 = 3
-        self.OUT_SIZE_LAYER_12 = 96
-        self.OUT_SIZE_LAYER_345 = 128
+#         self.conv1 = nn.Conv1d(2, 96, 7, padding=7//2)
+#         nn.init.xavier_uniform_(self.conv1.weight)
+#         self.maxp1 = nn.MaxPool1d(7, stride=7)
 
-        self.conv1 = nn.Conv1d(2, self.OUT_SIZE_LAYER_12, self.KERNEL_LAYER_12,
-                               padding=int((self.KERNEL_LAYER_12 - 1)/2))
-        nn.init.xavier_uniform_(self.conv1.weight)
-        self.maxp1 = nn.MaxPool1d(self.KERNEL_LAYER_12, stride=self.KERNEL_LAYER_12)
-        self.conv2 = nn.Conv1d(self.OUT_SIZE_LAYER_12, self.OUT_SIZE_LAYER_12, 
-                               self.KERNEL_LAYER_12, padding = int((self.KERNEL_LAYER_12 - 1)/2))
-        nn.init.xavier_uniform_(self.conv2.weight)
-        self.conv3 = nn.Conv1d(self.OUT_SIZE_LAYER_12, self.OUT_SIZE_LAYER_345, 
-                               self.KERNEL_LAYER_34, padding=int((self.KERNEL_LAYER_34 - 1)/2))
-        nn.init.xavier_uniform_(self.conv3.weight)
-        self.maxp3 = nn.MaxPool1d(self.KERNEL_LAYER_34, stride=self.KERNEL_LAYER_34)
-        self.conv4 = nn.Conv1d(self.OUT_SIZE_LAYER_345, self.OUT_SIZE_LAYER_345, 
-                               self.KERNEL_LAYER_34, padding=int((self.KERNEL_LAYER_34 - 1)/2))
-        nn.init.xavier_uniform_(self.conv4.weight)
-        self.maxp4 = nn.MaxPool1d(self.KERNEL_LAYER_34, stride=self.KERNEL_LAYER_34)
-        self.conv5 = nn.Conv1d(self.OUT_SIZE_LAYER_345, self.OUT_SIZE_LAYER_345, 
-                               self.KERNEL_LAYER_5, padding=int((self.KERNEL_LAYER_5 - 1)/2))
-        nn.init.xavier_uniform_(self.conv5.weight)
-        self.fc = nn.Linear(self.computeConvFlatSize(signalLength), 500)
-        nn.init.xavier_uniform_(self.fc.weight)
-        self.out = nn.Linear(500, 1)
-        nn.init.xavier_uniform_(self.out.weight)
-        self.act = nn.ReLU()
+#         self.conv2 = nn.Conv1d(96, 96, 7, padding = 7//2)
+#         nn.init.xavier_uniform_(self.conv2.weight)
+
+#         self.conv3 = nn.Conv1d(96, 128, 5, padding=5//2)
+#         nn.init.xavier_uniform_(self.conv3.weight)
+#         self.maxp3 = nn.MaxPool1d(5, stride=5)
+
+#         self.conv4 = nn.Conv1d(128, 128, 5, padding=5//2)
+#         nn.init.xavier_uniform_(self.conv4.weight)
+#         self.maxp4 = nn.MaxPool1d(5, stride=5)
+
+#         self.conv5 = nn.Conv1d(128, 128, 3, padding=3//2)
+#         nn.init.xavier_uniform_(self.conv5.weight)
+
+#         self.fc = nn.Linear(self.compute_flattened_size(signal_length), 500)
+#         nn.init.xavier_uniform_(self.fc.weight)
+#         self.out = nn.Linear(500, 1)
+#         nn.init.xavier_uniform_(self.out.weight)
+
+#         self.act = nn.ReLU()
         
-    def computeConvFlatSize(self, signLen):
-        afterMaxP1 = int((signLen - self.KERNEL_LAYER_12)/self.KERNEL_LAYER_12) + 1
-        afterMaxP3 = int((afterMaxP1 - self.KERNEL_LAYER_34)/self.KERNEL_LAYER_34) + 1
-        afterMaxP4 = int((afterMaxP3 - self.KERNEL_LAYER_34)/self.KERNEL_LAYER_34) + 1
-        return self.OUT_SIZE_LAYER_345 * afterMaxP4
+#     def compute_flattened_size(self, signal_length):
+#         new_size = (signal_length - 7)//7 + 1
+#         new_size = (new_size - 5)//5 + 1
+#         new_size = (new_size - 5)//5 + 1
+#         return 128 * new_size
         
-    def forward(self, inL, inR, debug=False):
-        # Add extra "channel" dimension for convolutional layers
-        inL = inL.view(inL.size(0), 1, inL.size(1))
-        inR = inR.view(inR.size(0), 1, inR.size(1))
+#     def forward(self, inL, inR, debug=False):
+#         # Add extra "channel" dimension for convolutional layers
+#         inL = inL.view(inL.size(0), 1, inL.size(1))
+#         inR = inR.view(inR.size(0), 1, inR.size(1))
 
-        # Concatenate input signals
-        x = torch.cat((inL, inR), dim=1)
-        if debug:
-            print("In = " + str(x.size()))
+#         # Concatenate input signals
+#         x = torch.cat((inL, inR), dim=1)
 
-        x = self.act((self.conv1(x)))
-        if debug:
-            print("Conv1 = " + str(x.size()))
+#         x = self.act(self.conv1(x))
+#         x = self.maxp1(x)
+#         x = self.act(self.conv2(x))
+#         x = self.act(self.conv3(x))
+#         x = self.maxp3(x)
+#         x = self.act(self.conv4(x))
+#         x = self.maxp4(x)
+#         x = self.act(self.conv5(x))
 
-        x = self.maxp1(x)
-        if debug:
-            print("Maxp1 = " + str(x.size()))
+#         x = x.view(x.size(0), -1)
+#         x = self.act(self.fc(x))
 
-        x = self.act((self.conv2(x)))
-        if debug:
-            print("Conv2 = " + str(x.size()))
-
-        x = self.act((self.conv3(x)))
-        if debug:
-            print("Conv3 = " + str(x.size()))
-
-        x = self.maxp3(x)
-        if debug:
-             print("Maxp3 = " + str(x.size()))
-
-        x = self.act((self.conv4(x)))
-        if debug:
-            print("Conv4 = " + str(x.size()))
-
-        x = self.maxp4(x)
-        if debug:
-            print("Maxp4 = " + str(x.size()))
-
-        x = self.act((self.conv5(x)))
-        if debug:
-            print("Conv5 = " + str(x.size()))
-
-        n_features = np.prod(x.size()[1:])
-        x = x.view(-1, n_features)
-        if debug:
-            print("Reshape = " + str(x.size()))
-
-        x = self.act(self.fc(x))
-        if debug:
-            print("FC = " + str(x.size()))
-
-        angles = self.out(x)
-
-        return angles
+#         return self.out(x)
 
 """
-ONE FREQUENCY AND AMP:
-    Converges around 4000 epochs for:
-        RAD = 50000                                         
-        MIC_L_DIST = (20000, 10000)                         
-        MIC_R_DIST = (18000, 12000)      
-        ABSORPTION = 1.0
-        MIN_FREQ = 50
-        SAMPLE_RATE = MIN_FREQ*2.5                            
-        TIME = 1                                            
-        MIN_LENGTH = 900    
-
-    Converges around 1100 epochs for:
-        RAD = 1000                                         
-        MIC_L_DIST = (0.4*RAD, 0.2*RAD)                         
-        MIC_R_DIST = (0.36*RAD, 0.24*RAD)               
-        ABSORPTION = 1.0
-        MIN_FREQ = 50
-        SAMPLE_RATE = MIN_FREQ*2.5                            
-        TIME = 1                                           
-        MIN_LENGTH = 350                                   
-        TO_RAD = np.pi/180                                  
-        TO_DEG = 180/np.pi      
-
-                            
+BASELINE MODEL                   
 """
 class SimpleNet(nn.Module):
-
-    def __init__(self, signalLength):
+    def __init__(self, signalLength, p=0.5):
         super(SimpleNet, self).__init__()
         self.fc1 = nn.Linear(signalLength*2, 1024)
         self.fc2 = nn.Linear(1024, 512)
-#         self.fc3 = nn.Linear(1024, 512)
-        self.fc4 = nn.Linear(512, 256)
-        self.fc5 = nn.Linear(256, 128)
-        self.fc6 = nn.Linear(128, 64)
-        # self.out = nn.Linear(32, 1)
+        self.fc3 = nn.Linear(512, 256)
+        self.fc4 = nn.Linear(256, 128)
+        self.fc5 = nn.Linear(128, 64)
         self.outX = nn.Linear(64, 1)
         self.outY = nn.Linear(64, 1)
         self.act = nn.ReLU()
+        self.dropout = nn.Dropout(p=p)
 
-    def forward(self, inL, inR, p = 0.5, isDropout = False):
+    def forward(self, inL, inR):
         # Concatenate input signals
         x = torch.cat((inL, inR), dim = 1)
 
-        x = F.dropout(self.act(self.fc1(x)), p = p, training = isDropout)
-        x = F.dropout(self.act(self.fc2(x)), p = p, training = isDropout)
-#         x = F.dropout(self.act(self.fc3(x)), p = p, training = isDropout)
-        x = F.dropout(self.act(self.fc4(x)), p = p, training = isDropout)
-        x = F.dropout(self.act(self.fc5(x)), p = p, training = isDropout)
-        x = F.dropout(self.act(self.fc6(x)), p = p, training = isDropout)
-        # x = self.out(x)
+        x = self.dropout(self.act(self.fc1(x)))
+        x = self.dropout(self.act(self.fc2(x)))
+        x = self.dropout(self.act(self.fc3(x)))
+        x = self.dropout(self.act(self.fc4(x)))
+        x = self.dropout(self.act(self.fc5(x)))
 
-        # return x
         return self.outX(x), self.outY(x)
