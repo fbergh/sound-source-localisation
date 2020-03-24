@@ -123,7 +123,7 @@ amp = 1
 freq = 20
 azi = np.pi/2
 
-signalMic1, signalMic2, _, _ = sineDataset.generateSignals(azi, amp, freq)
+signalMic1, signalMic2, _, _ = sineDataset.generate_signals(azi, amp, freq)
 
 plt.plot(signalMic1)
 plt.title("A (standardised) sine wave with amplitude of one and a frequency of 20Hz")
