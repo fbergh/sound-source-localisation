@@ -39,7 +39,7 @@ class SineData(Dataset):
         for _ in range(n_samples):
             azi = 2*np.pi*np.random.random_sample()
             amp = np.random.randint(1, 500 + 1)
-            freq = np.random.randint(self.MIN_FREQ, self.MAX_FREQ + 1)
+            freq = np.random.randint(self.MIN_FREQUENCY, self.MAX_FREQUENCY + 1)
 
             signalL, signalR, _, _ = self.generate_signals(azi, amp, freq)
             meansL.append(np.mean(signalL))
@@ -53,8 +53,7 @@ class SineData(Dataset):
         mean_varL = np.mean(varsL)
         mean_varR = np.mean(varsR)
 
-        # Because signals are symmetrical due to mic positions, 
-        # we can average the means and variances of both signals
+        # Because signals are symmetrical due to mic positions, we can average the means and variances of both signals
         mean = (meanL + meanR)/2
         # avg_std = sqrt(avg_variance)
         std = np.sqrt((mean_varL + mean_varR)/2)

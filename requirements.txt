@@ -1,0 +1,9 @@
+torch
+torchvision
+tensorflow
+tensorboard
+tensorboardX
+numpy
+scipy
+matplotlib
+pyroomacoustics

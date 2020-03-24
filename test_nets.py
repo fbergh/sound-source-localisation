@@ -14,7 +14,7 @@ import gc
 
 #%%
 device = torch.device("cuda:1" if torch.cuda.is_available() else "cpu")
-MODELS_PATH = "../models/"
+MODELS_PATH = "../"
 DATA_PATH = "../thesis_data/"
 BATCH_SIZE_EXP2 = 5
 BATCH_SIZE_EXP1 = 25
@@ -103,16 +103,16 @@ nets = []
 for rad in RADII:
     print(rad)
     net = ConvNet(MIN_LENGTH_EXP2).double()
-    net.load_state_dict(torch.load(MODELS_PATH+"ConvNet_Rad"+str(rad), map_location="cpu"))
+    net.load_state_dict(torch.load(MODELS_PATH+"ConvNet_Rad"+str(rad)+".pt", map_location="cpu"))
     net.eval()
     nets.append(net)
 
 mse_net = ConvNet(MIN_LENGTH_EXP1).double()
-mse_net.load_state_dict(torch.load(MODELS_PATH+"ConvNet_MSELoss", map_location="cpu"))
+mse_net.load_state_dict(torch.load(MODELS_PATH+"ConvNet_MSELoss.pt", map_location="cpu"))
 mse_net.eval()
 
 cos_net = ConvNet(MIN_LENGTH_EXP1, do_cosine_output=True).double()
-cos_net.load_state_dict(torch.load(MODELS_PATH+"ConvNet_CosLoss", map_location="cpu"))
+cos_net.load_state_dict(torch.load(MODELS_PATH+"ConvNet_CosLoss.pt", map_location="cpu"))
 cos_net.eval()
 
 
@@ -255,12 +255,9 @@ mse_net = mse_net.to(device)
 
 with torch.no_grad():
     for i,dataset in enumerate(DATASETS_EXP3):
-        
         print("Dataset "+str(i))
         dataloader = DataLoader(dataset, batch_size = BATCH_SIZE_EXP3)
-        
         for j in range(EPOCHS_EXP3):
-            
             ITDs_batch = []
             IIDs_batch = []
             
@@ -287,6 +284,7 @@ with torch.no_grad():
             _, _ = mse_net(inLs, inRs, record_acts = True)
             
             del inLs, inRs
+            gc.collect()
 
 del net 
 gc.collect()       
