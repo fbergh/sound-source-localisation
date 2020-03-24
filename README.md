@@ -13,6 +13,7 @@ python3 -m pip install -r requirements.txt
 
 ## Structure
 
+All code files can be found in the `src` directory with the following file structure:
 - `logger.py`: contains the `Logger` class to log the gradients and loss of a network during training, adapted from [this repository](https://github.com/yunjey/pytorch-tutorial/tree/master/tutorials/04-utils/tensorboard>).
 - `network.py`: contains the PyTorch-based network classes for the baseline and main neural networks.
 - `plots.py`: script to create part of the figures in the thesis.
